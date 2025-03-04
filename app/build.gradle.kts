@@ -26,8 +26,10 @@ android {
             )
         }
     }
-    viewBinding {
-        enable = true
+
+    buildFeatures {
+        viewBinding = true
+        dataBinding = true
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -56,7 +58,7 @@ dependencies {
     }
     implementation (libs.java.websocket)
 //    implementation (libs.protoo.client)
-
+//    implementation("io.getstream:stream-webrtc-android:1.3.8")
     implementation (libs.mediasoup.client)
     implementation (libs.androidx.lifecycle.extensions)
     implementation (libs.rxandroid)

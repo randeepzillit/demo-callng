@@ -1,6 +1,7 @@
 package com.example.mediasoupdemoimp
 
 import android.content.Context
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.enableEdgeToEdge
@@ -38,6 +39,7 @@ import org.webrtc.Camera2Capturer
 import org.webrtc.MediaConstraints
 import org.webrtc.RendererCommon
 import org.webrtc.SurfaceTextureHelper
+import org.webrtc.audio.JavaAudioDeviceModule
 import java.net.URI
 import java.nio.ByteBuffer
 
@@ -177,22 +179,37 @@ class MainActivity : AppCompatActivity() {
 //        binding.surfaceView = SurfaceViewRenderer(context)
 
         binding.surfaceView.apply {
-            init(eglBase.eglBaseContext, null)
             setMirror(false)
             setEnableHardwareScaler(true)
+            init(EglBase.create().eglBaseContext, null)
+
         }
     }
 
     fun playRemoteVideo(videoTrack: VideoTrack) {
         Log.d("Mediasoup", "Attaching track to renderer for consumerId: $videoTrack")
         runOnUiThread {
+            setupRemoteView(this)
             if (videoTrack != null) {
-                Log.d("Mediasoup", "🎥 Attaching Video Track: ${videoTrack.id()} binding.surfaceView.isVisible ${binding.surfaceView.isVisible}")
+                binding.surfaceView.post {
+                    videoTrack.removeSink(binding.surfaceView)
+                    videoTrack.addSink(binding.surfaceView)
+                    videoTrack?.setEnabled(true)
+                    binding.surfaceView.requestLayout()
+                    binding.surfaceView.invalidate()
+                    Log.d(
+                        "Mediasoup",
+                        "🎥 Attaching Video Track: ${videoTrack.id()} binding.surfaceView.isVisible ${binding.surfaceView.isVisible}"
+                    )
+                    binding.surfaceView.isVisible = true
+                }
 
-                videoTrack.addSink( binding.surfaceView)
             } else {
                 Log.e("Mediasoup", "⚠️ Video track is NULL")
             }
+//            binding.surfaceView.addFrameListener({ frame ->
+//                Log.d("Mediasoup", "✅ Video Frame Received: ${frame}")
+//            }, 1.0f)
         }
 
     }
@@ -220,11 +237,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun initWebRTC() {
         eglBase = EglBase.create()
-        binding.mySV.init(eglBase.eglBaseContext, null)
         binding.mySV.setMirror(true)
-        binding.mySV.setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FIT)
+        binding.mySV.setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FILL)
         binding.mySV.setEnableHardwareScaler(true)
-        setupRemoteView(this)
+        binding.mySV.init(eglBase.eglBaseContext, null)
+//        setupRemoteView(this)
         PeerConnectionFactory.initialize(
             PeerConnectionFactory.InitializationOptions.builder(this).createInitializationOptions()
         )
@@ -232,6 +249,15 @@ class MainActivity : AppCompatActivity() {
         peerConnectionFactory = PeerConnectionFactory.builder()
             .setVideoEncoderFactory(DefaultVideoEncoderFactory(eglBase.eglBaseContext, true, true))
             .setVideoDecoderFactory(DefaultVideoDecoderFactory(eglBase.eglBaseContext))
+            .setAudioDeviceModule(
+                JavaAudioDeviceModule
+                    .builder(this)
+                    .setUseHardwareAcousticEchoCanceler(Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
+                    .setUseHardwareNoiseSuppressor(Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
+                    .createAudioDeviceModule().also {
+
+                    }
+            )
             .createPeerConnectionFactory()
     }
 
@@ -259,10 +285,11 @@ class MainActivity : AppCompatActivity() {
 
         // Create Video and Audio Tracks
         localVideoTrack = peerConnectionFactory.createVideoTrack("videoTrack", videoSource)
-        var myTrack = peerConnectionFactory.createVideoTrack("local", videoSource)
         localAudioTrack = peerConnectionFactory.createAudioTrack("audioTrack", audioSource)
+        runOnUiThread {
+            localVideoTrack.addSink(binding.mySV)
 
-        myTrack.addSink(binding.mySV)
+        }
 //        localVideoTrack.addSink(binding.mySV)
     }
 
