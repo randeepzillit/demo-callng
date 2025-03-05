@@ -1,5 +1,6 @@
 package com.example.mediasoupdemoimp
 
+import android.app.Application
 import android.content.Context
 import android.os.Build
 import android.os.Bundle
@@ -14,7 +15,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import org.java_websocket.client.WebSocketClient
-
 import org.java_websocket.drafts.Draft_6455
 import org.java_websocket.handshake.ServerHandshake
 import org.json.JSONException
@@ -26,19 +26,17 @@ import org.mediasoup.droid.Producer
 import org.mediasoup.droid.RecvTransport
 import org.mediasoup.droid.SendTransport
 import org.mediasoup.droid.Transport
+import org.webrtc.AudioTrack
+import org.webrtc.Camera2Capturer
 import org.webrtc.Camera2Enumerator
 import org.webrtc.DefaultVideoDecoderFactory
 import org.webrtc.DefaultVideoEncoderFactory
 import org.webrtc.EglBase
+import org.webrtc.MediaConstraints
 import org.webrtc.PeerConnectionFactory
-import org.webrtc.SurfaceViewRenderer
+import org.webrtc.SurfaceTextureHelper
 import org.webrtc.VideoCapturer
 import org.webrtc.VideoTrack
-import org.webrtc.AudioTrack
-import org.webrtc.Camera2Capturer
-import org.webrtc.MediaConstraints
-import org.webrtc.RendererCommon
-import org.webrtc.SurfaceTextureHelper
 import org.webrtc.audio.JavaAudioDeviceModule
 import java.net.URI
 import java.nio.ByteBuffer
@@ -64,13 +62,13 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContentView(binding.root)
-        MediasoupClient.initialize(getApplicationContext());
+        MediasoupClient.initialize(applicationContext)
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main)) { v, insets ->
             val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
             insets
         }
-        mMediasoupDevice = Device();
+        mMediasoupDevice = Device()
         initWebRTC()
 
         val serverUri =
@@ -193,10 +191,11 @@ class MainActivity : AppCompatActivity() {
             if (videoTrack != null) {
                 binding.surfaceView.post {
                     videoTrack.removeSink(binding.surfaceView)
-                    videoTrack.addSink(binding.surfaceView)
-                    videoTrack?.setEnabled(true)
                     binding.surfaceView.requestLayout()
-                    binding.surfaceView.invalidate()
+                    videoTrack.addSink(binding.surfaceView)
+                    videoTrack.setEnabled(true)
+                    binding.surfaceView.requestLayout()
+//                    binding.surfaceView.invalidate()
                     Log.d(
                         "Mediasoup",
                         "🎥 Attaching Video Track: ${videoTrack.id()} binding.surfaceView.isVisible ${binding.surfaceView.isVisible}"
@@ -223,7 +222,7 @@ class MainActivity : AppCompatActivity() {
             put("method", "consume")
             put("id", 5)
             put("data", JSONObject().apply {
-                put("transportId", recvTransport?.id)
+                put("transportId", recvTransport.id)
                 put("producerId", producerId)
                 put("paused", false)
                 put("dtlsParameters", JSONObject(dtlsParameters.toString()))
@@ -237,18 +236,45 @@ class MainActivity : AppCompatActivity() {
 
     private fun initWebRTC() {
         eglBase = EglBase.create()
-        binding.mySV.setMirror(true)
-        binding.mySV.setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FILL)
-        binding.mySV.setEnableHardwareScaler(true)
-        binding.mySV.init(eglBase.eglBaseContext, null)
-//        setupRemoteView(this)
-        PeerConnectionFactory.initialize(
-            PeerConnectionFactory.InitializationOptions.builder(this).createInitializationOptions()
-        )
+        binding.mySV.run {
+            setMirror(true)
+            setEnableHardwareScaler(true)
+            init(eglBase.eglBaseContext, null)
+        }
 
-        peerConnectionFactory = PeerConnectionFactory.builder()
-            .setVideoEncoderFactory(DefaultVideoEncoderFactory(eglBase.eglBaseContext, true, true))
+        initPeerConnectionFactory(application)
+
+        peerConnectionFactory = buildPeerConnectionFactory()
+//        binding.mySV.setMirror(true)
+//        binding.mySV.setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FILL)
+//        binding.mySV.setEnableHardwareScaler(true)
+//        binding.mySV.init(eglBase.eglBaseContext, null)
+//        setupRemoteView(this)
+//        PeerConnectionFactory.initialize(
+//            PeerConnectionFactory.InitializationOptions.builder(this).createInitializationOptions()
+//        )
+//
+//        peerConnectionFactory = PeerConnectionFactory.builder()
+//            .setVideoEncoderFactory(DefaultVideoEncoderFactory(eglBase.eglBaseContext, true, true))
+//            .setVideoDecoderFactory(DefaultVideoDecoderFactory(eglBase.eglBaseContext))
+//            .setAudioDeviceModule(
+//                JavaAudioDeviceModule
+//                    .builder(this)
+//                    .setUseHardwareAcousticEchoCanceler(Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
+//                    .setUseHardwareNoiseSuppressor(Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
+//                    .createAudioDeviceModule().also {
+//
+//                    }
+//            )
+//            .createPeerConnectionFactory()
+    }
+
+
+    private fun buildPeerConnectionFactory(): PeerConnectionFactory {
+        return PeerConnectionFactory
+            .builder()
             .setVideoDecoderFactory(DefaultVideoDecoderFactory(eglBase.eglBaseContext))
+            .setVideoEncoderFactory(DefaultVideoEncoderFactory(eglBase.eglBaseContext, true, true))
             .setAudioDeviceModule(
                 JavaAudioDeviceModule
                     .builder(this)
@@ -258,18 +284,35 @@ class MainActivity : AppCompatActivity() {
 
                     }
             )
+            .setOptions(PeerConnectionFactory.Options().apply {
+                disableEncryption = true
+                disableNetworkMonitor = true
+            })
             .createPeerConnectionFactory()
+    }
+
+//    private fun buildPeerConnection(observer: PeerConnection.Observer) =
+//        peerConnectionFactory.createPeerConnection(
+//            iceServer,
+//            observer
+//        )
+
+    private fun initPeerConnectionFactory(context: Application) {
+        val options = PeerConnectionFactory.InitializationOptions.builder(context)
+            .setEnableInternalTracer(true)
+            .createInitializationOptions()
+        PeerConnectionFactory.initialize(options)
     }
 
     fun createLocalStream(context: Context) {
         // Initialize WebRTC
-        PeerConnectionFactory.initialize(
-            PeerConnectionFactory.InitializationOptions.builder(context)
-                .setEnableInternalTracer(true)
-                .createInitializationOptions()
-        )
-
-        peerConnectionFactory = PeerConnectionFactory.builder().createPeerConnectionFactory()
+//        PeerConnectionFactory.initialize(
+//            PeerConnectionFactory.InitializationOptions.builder(context)
+//                .setEnableInternalTracer(true)
+//                .createInitializationOptions()
+//        )
+//
+//        peerConnectionFactory = PeerConnectionFactory.builder().createPeerConnectionFactory()
 
         // Create Video Capturer
         videoCapturer = createCameraCapturer(context)
@@ -278,19 +321,21 @@ class MainActivity : AppCompatActivity() {
         val audioSource = peerConnectionFactory.createAudioSource(MediaConstraints())
 
         videoCapturer.initialize(
-            SurfaceTextureHelper.create("CaptureThread", EglBase.create().eglBaseContext),
+            SurfaceTextureHelper.create("CaptureThread", eglBase.eglBaseContext),
             context, videoSource.capturerObserver
         )
-        videoCapturer.startCapture(1280, 720, 30)
+        videoCapturer.startCapture(320, 240, 60)
 
         // Create Video and Audio Tracks
         localVideoTrack = peerConnectionFactory.createVideoTrack("videoTrack", videoSource)
         localAudioTrack = peerConnectionFactory.createAudioTrack("audioTrack", audioSource)
         runOnUiThread {
             localVideoTrack.addSink(binding.mySV)
-
         }
-//        localVideoTrack.addSink(binding.mySV)
+        val localStream = peerConnectionFactory.createLocalMediaStream("local_steam")
+        localStream.addTrack(localVideoTrack)
+        localStream.addTrack(localAudioTrack)
+//        peerConnection?.addStream(localStream)
     }
 
     // Create Camera Capturer
@@ -427,7 +472,7 @@ class MainActivity : AppCompatActivity() {
                         put("method", "connectWebRtcTransport")
                         put("id", connectWebRtcEvent)
                         put("data", JSONObject().apply {
-                            put("transportId", transport?.id)
+                            put("transportId", transport.id)
 
                             put("dtlsParameters", JSONObject(dtlsParameters))
 
